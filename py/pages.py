@@ -55,7 +55,7 @@ class Page(object):
         res = requests.get(self.url)
         if res.status_code == 503:
             sleep(1)
-            body = self.get()
+            body = self._get()
         else:
             body = ftfy.fix_text(res.text)
         return body
