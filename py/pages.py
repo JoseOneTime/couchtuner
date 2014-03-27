@@ -102,4 +102,13 @@ class ShowPage(CtPage):
         ssn_ep_max = max([ep['num'] for ep in  eps if ep['season'] == ssn_max])
         return dict(season=ssn_max, ep=ssn_ep_max)
 
-
+    def _print_eps_by_season(self):
+        """ Print basic ep info for show """
+        latest = self.get_latest_ep()
+        print 'Latest ep: S%i E%s' % (latest['season'], latest['ep'])
+        seasons = range(1, latest['season'] + 1)
+        for ssn in seasons:
+            print 'Season %i' % ssn
+            for ep in self.get_ep_list(ssn):
+                print 'S%i E%i: %r' % (ep['season'], ep['num'], ep['name'])
+            print
