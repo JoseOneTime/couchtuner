@@ -112,3 +112,8 @@ class ShowPage(CtPage):
             for ep in self.get_ep_list(ssn):
                 print 'S%i E%i: %r' % (ep['season'], ep['num'], ep['name'])
             print
+class PageTypeError(Exception):
+    pass
+
+class NoSourceError(Exception):
+    pass
