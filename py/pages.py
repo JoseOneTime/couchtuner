@@ -4,6 +4,7 @@ from time import sleep
 from urlparse import urljoin
 
 from bs4 import BeautifulSoup
+import ftfy
 import requests
 
 def catch_key_error(func):
@@ -50,7 +51,7 @@ class Page(object):
             sleep(1)
             body = self.get()
         else:
-            body = res.text
+            body = ftfy.fix_text(res.text)
         return body
 
 class CtPage(Page):
