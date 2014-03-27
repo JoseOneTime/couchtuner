@@ -1,11 +1,13 @@
 """ CT and co page objects """
 import re
 from time import sleep
-from urlparse import urljoin
+from urlparse import urljoin, urlparse, parse_qs
 
 from bs4 import BeautifulSoup
 import ftfy
 import requests
+
+from common import HOSTS
 
 def catch_key_error(func):
     """ Decorator logs key errors """
@@ -21,6 +23,10 @@ def catch_key_error(func):
 def get_abs_ct_url(url):
     """ Return absolute url for CT page """
     return urljoin('http://www.couchtuner.eu', url)
+
+def get_host(url):
+    """ Return netloc aka host from url """
+    return urlparse(url).netloc
 
 def _sort_dicts(dicts, key):
     """ Return dicts sorted by key """
@@ -123,6 +129,21 @@ class WatchHerePage(CtPage):
             raise PageTypeError('Not a Watch Here page')
         self.desc = self.entry.p.text
         self.watch_here_link = get_abs_ct_url(self.entry.a['href'])
+
+class EpPage(CtPage):
+    """ CT episode player page """
+
+    def __init__(self, url):
+        super(EpPage, self).__init__(url)
+        self.iframe_srcs = self._get_iframe_srcs()
+        if len(self.iframe_srcs) == 0:
+            raise PageTypeError('There are no valid iframe srcs on this page.')
+
+    def _get_iframe_srcs(self):
+        """ Return scrapeable iframe srcs for vids on Page """
+        return [iframe['src'] for iframe in self.soup.select(
+            '.postTabs_divs iframe') if get_host(iframe['src']) in HOSTS]
+
 
 class PageTypeError(Exception):
     pass
