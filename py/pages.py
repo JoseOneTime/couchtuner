@@ -25,13 +25,13 @@ def get_abs_ct_url(url):
 def parse_ep_text(text):
     """ Return ep info from text """
     m = re.search('(?:S|Season )(?P<season>\d+)'
-                             ' (?:E|Epis[o0]de )(?P<ep>\d+(?:-\d+)?)'
+                             ' (?:E|Epis[o0]de )(?P<ep>\d+)(?:-\d+)?'
                              '(?: ?\W+)? (?P<name>.*)',
                              text)
     season = int(m.group('season'))
-    ep = m.group('ep') # left as a string, to handle 15-16 situations
+    ep = int(m.group('ep'))
     name = m.group('name')
-    return dict(season=season, ep=ep, name=name)
+    return dict(season=season, num=ep, name=name)
 
 
 class Page(object):
@@ -87,5 +87,11 @@ class ShowPage(CtPage):
                     eps.append(ep)
         return eps
 
+    def get_latest_ep(self):
+        """ Return dict(season=season, ep=ep) for latest ep """
+        eps = self.get_ep_list()
+        ssn_max = max(list({ep['season'] for ep in eps}))
+        ssn_ep_max = max([ep['num'] for ep in  eps if ep['season'] == ssn_max])
+        return dict(season=ssn_max, ep=ssn_ep_max)
 
 
