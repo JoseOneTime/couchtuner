@@ -112,6 +112,18 @@ class ShowPage(CtPage):
             for ep in self.get_ep_list(ssn):
                 print 'S%i E%i: %r' % (ep['season'], ep['num'], ep['name'])
             print
+
+
+class WatchHerePage(CtPage):
+
+    def __init__(self, url):
+        """ Init obj """
+        super(WatchHerePage, self).__init__(url)
+        if not self.is_watch_here_page():
+            raise PageTypeError('Not a Watch Here page')
+        self.desc = self.entry.p.text
+        self.watch_here_link = get_abs_ct_url(self.entry.a['href'])
+
 class PageTypeError(Exception):
     pass
 
