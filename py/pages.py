@@ -22,6 +22,12 @@ def get_abs_ct_url(url):
     """ Return absolute url for CT page """
     return urljoin('http://www.couchtuner.eu', url)
 
+def _sort_dicts(dicts, key):
+    """ Return dicts sorted by key """
+    keyed = [(d[key], d) for d in dicts]
+    keyed.sort()
+    return [x[1] for x in keyed]
+
 @catch_key_error
 def parse_ep_text(text):
     """ Return ep info from text """
@@ -86,6 +92,7 @@ class ShowPage(CtPage):
             if ep:
                 if not season or ep['season'] == season:
                     eps.append(ep)
+        eps = _sort_dicts(eps, 'num')
         return eps
 
     def get_latest_ep(self):
