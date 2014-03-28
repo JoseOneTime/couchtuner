@@ -182,6 +182,7 @@ class SourcePage(Page):
                 'FlashVars not found in %s' % self.url)
         self.mp4_url = self._get_mp4_url()
         if not self.mp4_url:
+            # do I need to skip the msg here?
             raise NoSourceError(
                 'No mp4 url found in %s' % self.url)
         self.img_src = self._get_img_src()
