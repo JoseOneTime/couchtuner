@@ -6,8 +6,11 @@ from urlparse import urljoin, urlparse, parse_qs
 from bs4 import BeautifulSoup
 import ftfy
 import requests
+from selenium.common.exceptions import (
+    WebDriverException, NoSuchElementException,
+    NoSuchAttributeException)
 
-from common import HOSTS
+from common import HOSTS, FV_ATTRS, FILE_ATTRS, IMG_ATTRS
 
 def catch_key_error(func):
     """ Decorator logs key errors """
@@ -143,6 +146,66 @@ class EpPage(CtPage):
         """ Return scrapeable iframe srcs for vids on Page """
         return [iframe['src'] for iframe in self.soup.select(
             '.postTabs_divs iframe') if get_host(iframe['src']) in HOSTS]
+
+
+class SourcePage(Page):
+    """ Source video embedded player page """
+
+    def __init__(self, url, chrome):
+        super(SourcePage, self).__init__(url)
+        self.chrome = chrome
+        self.host = get_host(url)
+        self._flashvars = self._get_flashvars()
+        if not self._flashvars:
+            raise NoSourceError(
+                'FlashVars not found in %s' % self.url)
+        self.mp4_url = self._get_mp4_url()
+        if not self.mp4_url:
+            raise NoSourceError(
+                'No mp4 url found in %s' % self.url)
+        self.img_src = self._get_img_src()
+        self.duration = self._get_fv_val('duration')
+
+    def _get_flashvars(self):
+        """ Return dict of flashvars """
+        fv_vals = None
+        try:
+            self.chrome.get(self.url)
+            fv_vals = parse_qs(self.chrome
+                .find_element_by_name('flashvars')
+                .get_attribute('value'))
+            #for i in fv_vals.items(): print i
+            fv_vals = {k:v for k, v in fv_vals.items() if k in FV_ATTRS}
+        except (NoSuchElementException, NoSuchAttributeException):
+            pass
+        except WebDriverException as err:
+            print err
+        #print 'fv_vals:', fv_vals
+        return fv_vals
+
+    def _get_mp4_url(self):
+        """ Return url of highest quality mp4 source """
+        url = None
+        for attr in FILE_ATTRS:
+            val = self._get_fv_val(attr)[0]
+            if val and val.endswith('.mp4'):
+                url = val
+                break
+        return url
+
+    def _get_img_src(self):
+        """ Return img src """
+        src = None
+        for attr in IMG_ATTRS:
+            src = self._get_fv_val(attr)
+            if src:
+                break
+        return src
+
+    @catch_key_error
+    def _get_fv_val(self, key):
+        """ Return value of key in _flashvars """
+        return self._flashvars[key]
 
 
 class PageTypeError(Exception):
