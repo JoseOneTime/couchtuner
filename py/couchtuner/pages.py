@@ -1,16 +1,20 @@
 """ CT and co page objects """
+from errno import EEXIST
+import os
 import re
 from time import sleep
 from urlparse import urljoin, urlparse, parse_qs, urlsplit, urlunsplit
 
 from bs4 import BeautifulSoup
 import ftfy
+from lxml.builder import E
 import requests
 from selenium.common.exceptions import (
     WebDriverException, NoSuchElementException,
     NoSuchAttributeException)
 
-from common import HOSTS, FV_ATTRS, FILE_ATTRS, IMG_ATTRS
+from common import (HOSTS, FV_ATTRS, FILE_ATTRS, IMG_ATTRS, S3_URL,
+    SHOWS)
 
 def catch_key_error(func):
     """ Decorator logs key errors """
@@ -19,6 +23,7 @@ def catch_key_error(func):
         try:
             result = func(*args, **kwargs)
         except KeyError as err:
+            #print 'KeyError in %s: %s' % (func.__name__, err)
             pass
         return result
     return decorated
@@ -31,24 +36,17 @@ def get_host(url):
     """ Return netloc aka host from url """
     return urlparse(url).netloc
 
-def _sort_dicts(dicts, key):
-    """ Return dicts sorted by key """
-    keyed = [(d[key], d) for d in dicts]
-    keyed.sort()
-    return [x[1] for x in keyed]
+def get_bitrate(url):
+    """ Return url's host's bitrate """
+    return HOSTS[get_host(url)]
 
-@catch_key_error
-def parse_ep_text(text):
-    """ Return ep info from text """
-    m = re.search(r'(?:S|Season )(?P<season>\d+)'
-                             r' (?:E|Epis[o0]de )(?P<ep>\d+)(?:-\d+)?'
-                             r'(?: ?\W+)? (?P<name>.*)',
-                             text)
-    season = int(m.group('season'))
-    ep = int(m.group('ep'))
-    name = m.group('name')
-    return dict(season=season, num=ep, name=name)
-
+def mkdir(dir_):
+    """ Make dir if it doesn't already exist """
+    try:
+        os.mkdir(dir_)
+    except OSError as err:
+        if err.errno != EEXIST:
+            raise
 
 class Page(object):
     """ Base class for all pages """
@@ -68,6 +66,38 @@ class Page(object):
         else:
             body = ftfy.fix_text(res.text)
         return body
+
+
+class Episode(object):
+    """ CT episode """
+    url = desc = img_src = ''
+    duration = 0
+
+    def __init__(self, show_pg, season, num, name):
+        self.show_pg = show_pg
+        self.season = season
+        self.num = num
+        self.name = name
+        self.content_id = self.get_content_id()
+
+    def __str__(self):
+        return 'S%i E%i: %r' % (self.season, self.num, self.name)
+
+    def __repr__(self):
+        return str(self)
+
+    def get_content_id(self):
+        """ Return content id """
+        return '%i%i%i' % (
+            SHOWS[self.show_pg.name.lower()]['id_'],
+            self.season,
+            self.num)
+
+    def to_xml(self):
+        """ Return XML representation """
+        return E('episode', num=str(self.num), name=self.name, desc=self.desc,
+            url=self.url, content_id=self.content_id, duration=self.duration)
+
 
 class CtPage(Page):
     """ Base class for all CT pages """
@@ -89,6 +119,58 @@ class ShowPage(CtPage):
         self.name = self._get_name()
         self.img_src = self._get_img_src()
 
+    def write_season_file(self, season, chrome):
+        """ Update single season """
+        print 'Parsing season %i' % season
+        root = E('root')
+        for ep in self.get_ep_list(season, detail=True):
+            srcs = []
+            for src in EpPage(ep.url).iframe_srcs:
+                try:
+                    print 'getting src %s...' % src,
+                    p = SourcePage(src, chrome)
+                    print 'OK'
+                    if not ep.duration:
+                        ep.duration = str(p.duration)
+                    if not ep.img_src:
+                        ep.img_src = p.img_src
+                    print 'appending src...',
+                    srcs.append(dict(url=p.mp4_url, bitrate=get_bitrate(p.url)))
+                    print 'OK'
+                except NoSourceError as err:
+                    print err
+            if len(srcs) > 0:
+                ep_xml = ep.to_xml()
+                for src in srcs:
+                    ep_xml.append(E('source', url=src['url'], bitrate=str(src['bitrate'])))
+                root.append(ep_xml)
+            else:
+                print 'No source found for E%i' % ep.num
+        mkdir('shows\\%s' % self.get_formatted_name())
+        print 'Writing xml...',
+        root.getroottree().write('shows\\%s\\%i.xml' % (
+            self.get_formatted_name(),
+            season))
+        print 'DONE!\n'
+
+    def get_feed_url(self, season):
+        """ Return feed url """
+        return urljoin(S3_URL, '%s/%i.xml' % (self.get_formatted_name(), season))
+
+    def get_formatted_name(self):
+        """ Return formatted showname """
+        return '_'.join(self.name.lower().split())
+
+    @catch_key_error
+    def parse_ep_text(self, text):
+        """ Return ep info from text """
+        m = re.search(r'(?:S|Season )(?P<season>\d+)'
+                                 r' (?:E|Epis[o0]de )(?P<ep>\d+)(?:-\d+)?'
+                                 r'(?: ?\W+)? (?P<name>.*)',
+                                 text)
+        ep = Episode(self, int(m.group('season')), int(m.group('ep')), m.group('name'))
+        return ep
+
     @catch_key_error
     def _get_name(self):
         """ Return show name """
@@ -101,34 +183,34 @@ class ShowPage(CtPage):
     def get_ep_list(self, season=None, detail=False):
         """ Return episode list for single or all seasons """
         eps = []
+        print 'parsing eps',
         for li in self.entry.find_all('li'):
-            ep = parse_ep_text(li.text)
+            print '.',
+            ep = self.parse_ep_text(li.text)
             if ep:
-                if not season or ep['season'] == season:
+                if not season or (ep.season == season):
                     eps.append(ep)
-                    ep['url'] = get_abs_ct_url(li.a['href'])
-                    ep['desc'] = ''
+                    ep.url = get_abs_ct_url(li.a['href'])
                     if detail:
                         try:
-                            p = WatchHerePage(ep['url'])
-                            ep['desc'] = p.desc
-                            ep['url'] = p.watch_here_link
+                            p = WatchHerePage(ep.url)
+                            ep.desc = p.desc
+                            ep.url = p.watch_here_link
                         except PageTypeError:
                             pass
-        eps = _sort_dicts(eps, 'num')
+        print 'OK'
+        eps = sorted(eps, key=lambda ep: ep.num)
         return eps
 
     def get_seasons(self):
         """ Return sorted list of seasons """
-        seasons = list(set([ep['season'] for ep in
-            self.get_ep_list()]))
-        return sorted(seasons)
+        return sorted(list(set([ep.season for ep in self.get_ep_list()])))
 
     def get_latest_ep(self):
         """ Return dict(season=season, ep=ep) for latest ep """
         eps = self.get_ep_list()
-        ssn_max = max(list({ep['season'] for ep in eps}))
-        ssn_ep_max = max([ep['num'] for ep in  eps if ep['season'] == ssn_max])
+        ssn_max = max(list({ep.season for ep in eps}))
+        ssn_ep_max = max([ep.num for ep in  eps if ep.season == ssn_max])
         return dict(season=ssn_max, ep=ssn_ep_max)
 
     def _print_eps_by_season(self):
@@ -139,9 +221,21 @@ class ShowPage(CtPage):
         for ssn in seasons:
             print 'Season %i' % ssn
             for ep in self.get_ep_list(ssn):
-                print 'S%i E%i: %r' % (ep['season'], ep['num'], ep['name'])
+                print 'S%i E%i: %r' % (ep.season, ep.num, ep.name)
             print
 
+    def to_xml(self):
+        """ Return XML representation """
+        print 'Parsing %s...' % self.name
+        show = E('show', name=self.name, img_src=self.img_src, url=self.url)
+        latest = self.get_latest_ep()
+        show.append(E('latest', season=str(latest['season']), ep=str(latest['ep'])))
+        print 'Parsing seasons',
+        for season in self.get_seasons():
+            print '.',
+            show.append(E('season', num=str(season), feed=self.get_feed_url(season)))
+        print 'DONE'
+        return show
 
 class WatchHerePage(CtPage):
     """ CT Page with 'Watch here' link to EpPage """
@@ -181,10 +275,11 @@ class SourcePage(Page):
             raise NoSourceError(
                 'FlashVars not found in %s' % self.url)
         self.mp4_url = self._get_mp4_url()
+        print ('mp4_url: %s...' % self.mp4_url),
         if not self.mp4_url:
             # do I need to skip the msg here?
-            raise NoSourceError(
-                'No mp4 url found in %s' % self.url)
+            raise NoSourceError('No mp4 url found in %s' % self.url)
+        print 'OK'
         self.img_src = self._get_img_src()
         self.duration = self._get_fv_val('duration')
 
@@ -243,3 +338,14 @@ class NoSourceError(Exception):
     """ Errors thrown when page doesn't include appropriate source info """
     pass
 
+if __name__ == '__main__':
+    from common import start_chromedriver
+    p = ShowPage('http://www.couchtuner.eu/watch-new-girl-online/')
+    chrome = start_chromedriver()
+    try:
+        p.write_season_file(3, chrome)
+    except Exception as err:
+        print '%s: %s' % (type(err), err)
+        raise
+    finally:
+        chrome.quit()
