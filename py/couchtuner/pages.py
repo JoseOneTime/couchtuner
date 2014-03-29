@@ -96,7 +96,8 @@ class Episode(object):
     def to_xml(self):
         """ Return XML representation """
         return E('episode', num=str(self.num), name=self.name, desc=self.desc,
-            url=self.url, content_id=self.content_id, duration=self.duration)
+            url=self.url, content_id=self.content_id, duration=self.duration,
+            img_src=self.img_src)
 
 
 class CtPage(Page):
