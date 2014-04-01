@@ -1,44 +1,75 @@
 """ Main entry point for CT-scraping """
+from argparse import ArgumentParser
 from errno import EEXIST
 import os
-from urlparse import urljoin, urlparse
+from time import time
+from traceback import print_exc
+import boto
 from lxml import etree
 from lxml.builder import E
-from common import SHOWS, S3_URL, HOSTS, start_chromedriver
-from pages import ShowPage, EpPage, SourcePage, NoSourceError
-
-def mkdir(dir_):
-    """ Make dir if it doesn't already exist """
-    try:
-        os.mkdir(dir_)
-    except OSError as err:
-        if err.errno != EEXIST:
-            raise
+from common import SHOWS, start_chromedriver, mkdir
+from pages import ShowPage
 
 def init_shows_xml():
     """ Initialize shows.xml """
     shows_root = E('root')
-    for v in SHOWS.values():
-        show_pg = ShowPage(v['url'])
+    for key in sorted(SHOWS.keys()):
+        show_pg = ShowPage(SHOWS[key]['url'])
         show = show_pg.to_xml()
         shows_root.append(show)
     shows_root.getroottree().write('shows.xml')
+    s3 = boto.connect_s3()
+    s3_bucket = s3.get_bucket('xtcouchtuner')
+    s3_key = s3_bucket.get_key('shows.xml')
+    s3_key.set_contents_from_filename('shows.xml')
+    s3.close()
 
-def do_it_all():
-    """ Do it! """
-    shows = etree.parse('shows.xml')
+def go(showname=None, season=None):
+    if showname:
+        shows = [showname]
+    else:
+        shows = sorted(SHOWS.keys())
     chrome = start_chromedriver()
+    s3 = boto.connect_s3()
+    s3_bucket = s3.get_bucket('xtcouchtuner')
     try:
-        mkdir('shows')
-        for s in shows.findall('show'):
-            show_pg = ShowPage(s.get('url'))
-            print 'Parsing %s...' % show_pg.name
-            for ssn in s.findall('season'):
-                show_pg.write_season_file(int(ssn.get('num')), chrome)
-    except Exception as err:
-        print 'WHOOPS!!!!', err
+        for showname in shows:
+            print 'Parsing %s...' % showname.title()
+            p = ShowPage(SHOWS[showname.lower()]['url'])
+            if season:
+                seasons = [season]
+            else:
+                seasons = p.get_seasons()
+            for s in seasons:
+                print 'Writing season %i...' % s,
+                p.write_season_file(s, chrome)
+                print 'Season %i local done...' % s,
+                s3_key = s3_bucket.get_key(p.get_s3_key_name(s))
+                if not s3_key:
+                    s3_key = s3_bucket.new_key(p.get_s3_key_name(s))
+                s3_key.set_contents_from_filename(p.get_local_xml_file(s))
+                print 'S3 done'
+            print
+    except:
+        print_exc()
     finally:
         chrome.quit()
+        s3.close()
+
 
 if __name__ == '__main__':
-    do_it_all()
+    try:
+        START = time()
+        parser = ArgumentParser(description='Update CT xml files')
+        parser.add_argument('--show', help='show name (default = all)')
+        parser.add_argument('-s', '--season', type=int, help='season (default = all)')
+        parser.add_argument('-i', '--init', help='initialize shows.xml', action='store_true')
+        args = parser.parse_args()
+        if args.init:
+            init_shows_xml()
+        else:
+            go(args.show, args.season)
+        DURATION = time() - START
+        print 'Duration in minutes:', DURATION / 60
+    except KeyboardInterrupt:
+        print "Well, I guess you've got better things to do"
