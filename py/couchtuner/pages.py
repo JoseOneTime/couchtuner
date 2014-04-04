@@ -50,7 +50,7 @@ class Page(object):
         """ Get response body for Page """
         # best balance between runtime and num of 503 errors
         sleep(0.4)
-        res = requests.get(self.url)
+        res = requests.get(self.url, timeout=3.0)
         if res.status_code == 503:
             sleep(1)
             body = self._get()
@@ -122,12 +122,17 @@ class ShowPage(CtPage):
             srcs = []
             try:
                 for src in EpPage(ep.url).iframe_srcs:
-                    p = SourcePage(src, chrome)
-                    if not ep.duration:
-                        ep.duration = str(p.duration)
-                    if not ep.img_src:
-                        ep.img_src = p.img_src
-                    srcs.append(dict(url=p.mp4_url, bitrate=get_bitrate(p.url)))
+                    try:
+                        p = SourcePage(src, chrome)
+                        if not ep.duration:
+                            ep.duration = str(p.duration)
+                        if not ep.img_src:
+                            ep.img_src = p.img_src
+                        srcs.append(dict(url=p.mp4_url, bitrate=get_bitrate(p.url)))
+                    except requests.exceptions.Timeout:
+                        pass
+            except requests.exceptions.Timeout:
+                pass
             except NoSourceError:
                 pass
             if len(srcs) > 0:
@@ -194,6 +199,8 @@ class ShowPage(CtPage):
                             p = WatchHerePage(ep.url)
                             ep.desc = p.desc
                             ep.url = p.watch_here_link
+                        except requests.exceptions.Timeout:
+                            pass
                         except PageTypeError:
                             pass
         eps = sorted(eps, key=lambda ep: ep.num)
