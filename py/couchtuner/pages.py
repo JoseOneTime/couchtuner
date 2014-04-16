@@ -129,9 +129,9 @@ class ShowPage(CtPage):
                         if not ep.img_src:
                             ep.img_src = p.img_src
                         srcs.append(dict(url=p.mp4_url, bitrate=get_bitrate(p.url)))
-                    except requests.exceptions.Timeout:
+                    except (requests.exceptions.Timeout, TimeoutException):
                         pass
-            except requests.exceptions.Timeout:
+            except (requests.exceptions.Timeout, TimeoutException):
                 pass
             except NoSourceError:
                 pass

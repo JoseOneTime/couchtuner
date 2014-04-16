@@ -61,7 +61,7 @@ def start_chromedriver():
         options.add_argument("--log-level=3")
         chrome = _get_chromedriver_with_options(options)
         print 'Initializing ChromeDriver with AdBlock...'
-        chrome.find_element_by_id('paypal-xclick-form')
+        chrome.find_element_by_id('pay-controls')
         print 'AdBlock is installed.'
         chrome.set_page_load_timeout(5)
     else:
