@@ -5,7 +5,7 @@ import os
 from selenium import webdriver
 
 SHOWS = {
-    'game of thrones': dict(url='http://www.couchtuner.eu/watch-game-of-thrones-online-free/', id_=0),
+    'game of thrones': dict(url='http://www.couchtuner.eu/watch-game-of-thrones-online-1/', id_=0),
     'lost girl': dict(url='http://www.couchtuner.eu/watch-lost-girl/', id_=1),
     'new girl': dict(url='http://www.couchtuner.eu/watch-new-girl-online/', id_=2),
     'once upon a time': dict(url='http://www.couchtuner.eu/watch-once-upon-a-time-online/', id_=3),
